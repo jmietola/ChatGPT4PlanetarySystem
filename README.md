@@ -1,5 +1,5 @@
 ﻿# ChatGPT4PlanetarySystem
-Working with chatGPT4 to showcase how to build applications with it..
+Working with chatGPT4 to showcase how to build applications with it. I try to include requests given to chatGPT to commit message and applied code will be in files that chatGPT4 gives. 
 
 
 run
