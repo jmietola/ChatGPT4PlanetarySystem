@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Aurinkokuntamalli</title>
+<style>
+  body {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    padding: 0;
+    overflow: hidden;
+  }
+  canvas {
+    display: flex;
+  }
+  canvas#graph {
+    height: 300px!important;
+  }
+  footer {
+  background-color: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  padding: 1rem;
+  text-align: center;
+  flex-shrink: 0;
+  }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  </head>
+  <body>
+    <script type="module">
+      import * as THREE from './js/three.module.js';
+      import { OrbitControls } from './js/OrbitControls.js';
+      import * as CANNON from './js/cannon-es.js';
+	    import { FontLoader } from './js/FontLoader.js'; // Muista lisätä tämä import-osioon
+      import { OBJLoader } from './js/OBJLoader.js';
+      import { SunShader } from './js/sun-shader.js';  
+
+      const scene = new THREE.Scene();
+
+      const cubeLoader = new THREE.CubeTextureLoader();
+      const textureCube = cubeLoader.load([
+      './textures/right.png',
+      './textures/left.png',
+      './textures/top.png',
+      './textures/bottom.png',
+      './textures/front.png',
+      './textures/back.png',
+      ]);
+      scene.background = textureCube;
+let myChart;
+let sunForces = [];
+let planet1Forces = [];
+let planet2Forces = [];
+let asteroidForces = [];
+let stationMesh;
+
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+camera.position.set(0, 0, 10);
+camera.lookAt(scene.position);
+
+const renderer = new THREE.WebGLRenderer();
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+
+const loader = new FontLoader();
+loader.load('./fonts/helvetiker_regular.typeface.json', (font) => {
+  const textGeometry = new THREE.TextGeometry('Eagle Bog Mining', {
+    font: font,
+    size: 0.5,
+    height: 0.1,
+  });
+
+  const textMaterial = new THREE.MeshPhongMaterial({ color: 0xffffff });
+  const textMesh = new THREE.Mesh(textGeometry, textMaterial);
+  textMesh.position.set(7.5, 1.5, 0); // Aseta teksti avaruusaseman yläpuolelle
+  //scene.add(textMesh);
+});
+
+function loadOBJModel() {
+  const loader = new OBJLoader();
+  const spaceStationMaterial = new THREE.MeshPhongMaterial({ color: 0x00aaff });
+  loader.load('/obj/iss.obj', (spaceStationMesh) => {
+    spaceStationMesh.traverse((child) => {
+      if (child.isMesh) {
+        child.material = spaceStationMaterial;
+      }
+    });
+
+    spaceStationMesh.scale.set(0.0001, 0.0001, 0.0001); // Adjust the scale if needed
+    spaceStationMesh.position.set(8, 0, 0);
+    spaceStationMesh.name = 'iss';
+
+    const spaceStationMeshIndex = scene.children.findIndex(child => child.name === 'spaceStationMesh');
+
+    if (spaceStationMeshIndex !== -1) {
+      scene.remove(scene.children[spaceStationMeshIndex]);
+    }
+
+    scene.add(spaceStationMesh);
+    stationMesh = spaceStationMesh;
+  });
+}
+
+
+//Space station
+// const spaceStationGeometry = new THREE.BoxGeometry(1, 1, 1);
+// 
+// const spaceStationMesh = new THREE.Mesh(spaceStationGeometry, spaceStationMaterial);
+// scene.add(spaceStationMesh);
+// spaceStationMesh.position.set(8, 0, 0); // Voit muuttaa sijaintia tarpeen mukaan
+loadOBJModel();
+
+// World
+const world = new CANNON.World();
+world.gravity.set(0, 0, 0);
+world.broadphase = new CANNON.NaiveBroadphase();
+
+// Aurinko
+const sunLight = new THREE.PointLight(0xffffff, 1, 0, 2);
+sunLight.position.set(0, 0, -50);
+scene.add(sunLight);
+const sunRadius = 2; // Aseta haluamasi arvo Auringon säteelle
+const sunGeometry = new THREE.SphereGeometry(1, 32, 32);
+//const sunMaterial = new THREE.MeshPhongMaterial({ color: 0xffff00, emissive: 0xffff00, emissiveIntensity: 0.5 });
+const sunMaterial = new THREE.ShaderMaterial(SunShader);
+const sunMesh = new THREE.Mesh(sunGeometry, sunMaterial);
+scene.add(sunMesh);
+
+const sunBody = new CANNON.Body({
+  mass: 10000, // Aseta suuri massa, jotta aurinko vetää muita kappaleita puoleensa
+  shape: new CANNON.Sphere(sunRadius),
+  position: new CANNON.Vec3(0, 0, 0),
+});
+world.addBody(sunBody);
+
+
+const G = 50; // Gravitaatiovakio; voit muuttaa arvoa tarvittaessa
+//const gravityForce = new CANNON.GravityForce(G, sunBody);
+
+// Planeetta 1
+const planet1Geometry = new THREE.SphereGeometry(0.1, 32, 32);
+const planet1Material = new THREE.MeshPhongMaterial({ color: 0xff0000 });
+const planet1Mesh = new THREE.Mesh(planet1Geometry, planet1Material);
+ scene.add(planet1Mesh);
+
+// Planeetta 2
+const planet2Geometry = new THREE.SphereGeometry(0.5, 32, 32);
+const planet2Material = new THREE.MeshPhongMaterial({ color: 0x00ff00 });
+const planet2Mesh = new THREE.Mesh(planet2Geometry, planet2Material);
+ scene.add(planet2Mesh);
+
+// // Kiertoradat
+// const orbit1Geometry = new THREE.CircleGeometry(4, 64);
+// //orbit1Geometry.vertices.shift(); // Poista keskuspiste
+// const orbit1Material = new THREE.LineBasicMaterial({ color: 0xffffff });
+// const orbit1Line = new THREE.LineLoop(orbit1Geometry, orbit1Material);
+// orbit1Line.rotation.x = Math.PI / 2;
+// scene.add(orbit1Line);
+
+// const orbit2Geometry = new THREE.CircleGeometry(5, 64);
+// //orbit2Geometry.vertices.shift(); // Poista keskuspiste
+// const orbit2Material = new THREE.LineBasicMaterial({ color: 0xffffff });
+// const orbit2Line = new THREE.LineLoop(orbit2Geometry, orbit2Material);
+// orbit2Line.rotation.x = Math.PI / 2;
+//scene.add(orbit2Line);
+
+function createGravitationalEllipse(distance, material) {
+  const radius1 = distance;
+  const radius2 = distance * 0.9;
+  const segments = 64;
+
+  const ellipseGeometry = new THREE.BufferGeometry();
+  const vertices = [];
+
+  for (let i = 0; i <= segments; i++) {
+    const angle = 2 * Math.PI * i / segments;
+    const x = radius1 * Math.cos(angle);
+    const y = radius2 * Math.sin(angle);
+    vertices.push(new THREE.Vector3(x, y, 0)); // Change this line to create THREE.Vector3 instances
+  }
+
+  ellipseGeometry.setFromPoints(vertices);
+  const ellipseMesh = new THREE.Line(ellipseGeometry, material);
+
+  ellipseMesh.rotation.x = Math.PI / 2; // Add this line to rotate the ellipse
+
+  return ellipseMesh;
+}
+
+
+
+
+const forceMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 });
+
+const numEllipses = 20; // Adjust this value to control the number of ellipses
+const minDistance = 10; // The distance of the innermost ellipse from the sun
+const distanceStep = 10; // The difference in distance between consecutive ellipses
+
+for (let i = 0; i < numEllipses; i++) {
+  const distance = minDistance + i * distanceStep;
+  const ellipse = createGravitationalEllipse(distance, forceMaterial);
+  scene.add(ellipse);
+}
+
+// Avaruusaseman fysiikkakappale
+// Planeettojen fysiikkakappaleet
+const spaceStation1Body = new CANNON.Body({
+  mass: 0.1,
+  shape: new CANNON.Sphere(0.1),
+  position: new CANNON.Vec3(8, 0, 0), // Muuta position y- ja z-koordinaatit 0:ksi
+  velocity: new CANNON.Vec3(2, 1, 50), // Muuta x- ja z-koordinaatit 0:ksi ja y-koordinaatti 5:ksi
+});
+world.addBody(spaceStation1Body);
+
+
+// Planeettojen fysiikkakappaleet
+const planet1Body = new CANNON.Body({
+  mass: 1.5,
+  shape: new CANNON.Sphere(0.1),
+  position: new CANNON.Vec3(4, 0, 0), // Muuta position y- ja z-koordinaatit 0:ksi
+  velocity: new CANNON.Vec3(0, 5, 2), // Muuta x- ja z-koordinaatit 0:ksi ja y-koordinaatti 5:ksi
+});
+world.addBody(planet1Body);
+
+const planet2Body = new CANNON.Body({
+  mass: 2, // Muuta massaa suuremmaksi, esim. 2
+  shape: new CANNON.Sphere(0.1),
+  position: new CANNON.Vec3(6, 0, 0), // Kokeile eri x-koordinaatteja, esim. 6
+  velocity: new CANNON.Vec3(0, 3.8, -5), // Kokeile eri y-koordinaatteja, esim. 3.8
+});
+world.addBody(planet2Body);
+
+// Asteroidi
+const asteroidGeometry = new THREE.SphereGeometry(0.1, 32, 32);
+const asteroidMaterial = new THREE.MeshPhongMaterial({ color: 0xaaaaaa });
+const asteroidMesh = new THREE.Mesh(asteroidGeometry, asteroidMaterial);
+scene.add(asteroidMesh);
+
+const asteroidBody = new CANNON.Body({
+  mass: 0.7,
+  shape: new CANNON.Sphere(0.1),
+  position: new CANNON.Vec3(-5, 0, 0),
+  velocity: new CANNON.Vec3(1, 0, 2),
+});
+world.addBody(asteroidBody);
+
+
+
+
+
+const clock = new THREE.Clock();
+
+function applyGravity(body1, body2, G) {
+  const distanceVector = new CANNON.Vec3();
+  distanceVector.copy(body1.position);
+  distanceVector.vsub(body2.position, distanceVector);
+
+  const distanceSquared = distanceVector.lengthSquared();
+  const distance = Math.sqrt(distanceSquared);
+
+  const forceMagnitude = (G * body1.mass * body2.mass) / distanceSquared;
+
+  const forceVector = new CANNON.Vec3();
+  forceVector.copy(distanceVector);
+  forceVector.scale(forceMagnitude / distance, forceVector);
+
+  body1.force.vsub(forceVector, body1.force);
+  body2.force.vadd(forceVector, body2.force);
+
+  // Tallenna voimat, etäisyydet ja nopeudet taulukkoihin
+  const forceAndData = {
+    force: forceVector.clone(),
+    distance: distance,
+    velocity1: body1.velocity.clone(),
+    velocity2: body2.velocity.clone(),
+  };
+
+  if (body1 === sunBody || body2 === sunBody) sunForces.push(forceAndData);
+  if (body1 === planet1Body || body2 === planet1Body) planet1Forces.push(forceAndData);
+  if (body1 === planet2Body || body2 === planet2Body) planet2Forces.push(forceAndData);
+  if (body1 === asteroidBody || body2 === asteroidBody) asteroidForces.push(forceAndData);
+}
+
+
+
+
+const animate = function () {
+  requestAnimationFrame(animate);
+
+  // Päivitä fysiikkamoottori
+  const delta = clock.getDelta();
+  world.step(delta * 0.001);
+
+  // Päivitä voimat gravitaation vaikutuksen mukaan
+  applyGravity(sunBody, planet1Body, G);
+  applyGravity(sunBody, planet2Body, G);
+  applyGravity(sunBody, asteroidBody, G);
+  applyGravity(sunBody, spaceStation1Body, G)
+
+  // Päivitä meshien sijainti fysiikkakappaleiden sijainnin mukaan
+  sunMesh.position.copy(sunBody.position);
+  planet1Mesh.position.copy(planet1Body.position);
+  planet2Mesh.position.copy(planet2Body.position);
+  asteroidMesh.position.copy(asteroidBody.position);
+  if(stationMesh)stationMesh.position.copy(spaceStation1Body.position);
+  
+  // Update uniforms as needed
+  sunMaterial.uniforms["u_time"].value += 0.1;
+  // orbit1Line.position.copy(sunBody.position);
+  // orbit2Line.position.copy(sunBody.position);
+
+  controls.update();
+  renderer.render(scene, camera);
+};
+
+
+
+animate();
+
+window.addEventListener('resize', onWindowResize, false);
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+setTimeout(() => {
+  saveForcesToFile();
+}, 250); // Tallenna voimat 60 sekunnin kuluttua
+
+function saveForcesToFile() {
+  const forcesData = {
+    sun: sunForces,
+    planet1: planet1Forces,
+    planet2: planet2Forces,
+    asteroid: asteroidForces,
+  };
+
+  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(forcesData));
+  const downloadAnchorNode = document.createElement('a');
+  downloadAnchorNode.setAttribute("href", dataStr);
+  downloadAnchorNode.setAttribute("download", "forces_data.json");
+  downloadAnchorNode.click();
+  downloadAnchorNode.remove();
+}
+
+window.onload = function() {
+  // Chart.js configuration
+    const ctx = document.getElementById('graph').getContext('2d');
+    myChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [
+          {
+            label: 'Planet 1 Force',
+            data: [],
+            borderColor: 'rgb(255, 99, 132)',
+            backgroundColor: 'rgba(255, 99, 132, 0.2)',
+            borderWidth: 1,
+            tension: 0.2,
+          },
+          {
+            label: 'Planet 2 Force',
+            data: [],
+            borderColor: 'rgb(75, 192, 192)',
+            backgroundColor: 'rgba(75, 192, 192, 0.2)',
+            borderWidth: 1,
+            tension: 0.2,
+          },
+          {
+            label: 'Asteroid Force',
+            data: [],
+            borderColor: 'rgb(153, 102, 255)',
+            backgroundColor: 'rgba(153, 102, 255, 0.2)',
+            borderWidth: 1,
+            tension: 0.2,
+          },
+        ],
+      },
+      options: {
+  scales: {
+    y: {
+      min: 0,
+      max: 50000
+    }
+  }
+}
+  });
+
+  setInterval(updateGraph, 1000); // Update the graph every 1000 ms (1 second)
+}
+
+function updateGraph() {
+  const forcesData = {
+    planet1: planet1Forces.slice(-1)[0] || {},
+    planet2: planet2Forces.slice(-1)[0] || {},
+    asteroid: asteroidForces.slice(-1)[0] || {},
+  };
+
+  myChart.data.labels.push(new Date().toLocaleTimeString());
+  myChart.data.datasets[0].data.push(forcesData.planet1.force ? forcesData.planet1.force.length() : 0);
+  myChart.data.datasets[1].data.push(forcesData.planet2.force ? forcesData.planet2.force.length() : 0);
+  myChart.data.datasets[2].data.push(forcesData.asteroid.force ? forcesData.asteroid.force.length() : 0);
+
+  // Limit data points displayed on the graph
+  const maxDataPoints = 60;
+  if (myChart.data.labels.length > maxDataPoints) {
+    myChart.data.labels.shift();
+    myChart.data.datasets.forEach((dataset) => dataset.data.shift());
+  }
+  // console.log(myChart.data);
+  myChart.update();
+  console.log("Graph updated:", myChart.data.labels.length, "data points", myChart.data);
+}
+    </script>
+	    <footer>
+        <div>
+          <canvas id="graph"></canvas>
+        </div>
+    </footer>
+  </body>
+</html>
