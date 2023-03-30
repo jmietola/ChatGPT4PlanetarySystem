@@ -3,4 +3,5 @@ Working with chatGPT4 to showcase how to build applications with it. I try to in
 
 
 run
+npm install
 http-server
