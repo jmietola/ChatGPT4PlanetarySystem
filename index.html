@@ -155,59 +155,6 @@ const planet2Material = new THREE.MeshPhongMaterial({ color: 0x00ff00 });
 const planet2Mesh = new THREE.Mesh(planet2Geometry, planet2Material);
  scene.add(planet2Mesh);
 
-// // Kiertoradat
-// const orbit1Geometry = new THREE.CircleGeometry(4, 64);
-// //orbit1Geometry.vertices.shift(); // Poista keskuspiste
-// const orbit1Material = new THREE.LineBasicMaterial({ color: 0xffffff });
-// const orbit1Line = new THREE.LineLoop(orbit1Geometry, orbit1Material);
-// orbit1Line.rotation.x = Math.PI / 2;
-// scene.add(orbit1Line);
-
-// const orbit2Geometry = new THREE.CircleGeometry(5, 64);
-// //orbit2Geometry.vertices.shift(); // Poista keskuspiste
-// const orbit2Material = new THREE.LineBasicMaterial({ color: 0xffffff });
-// const orbit2Line = new THREE.LineLoop(orbit2Geometry, orbit2Material);
-// orbit2Line.rotation.x = Math.PI / 2;
-//scene.add(orbit2Line);
-
-function createGravitationalEllipse(distance, material) {
-  const radius1 = distance;
-  const radius2 = distance * 0.9;
-  const segments = 64;
-
-  const ellipseGeometry = new THREE.BufferGeometry();
-  const vertices = [];
-
-  for (let i = 0; i <= segments; i++) {
-    const angle = 2 * Math.PI * i / segments;
-    const x = radius1 * Math.cos(angle);
-    const y = radius2 * Math.sin(angle);
-    vertices.push(new THREE.Vector3(x, y, 0)); // Change this line to create THREE.Vector3 instances
-  }
-
-  ellipseGeometry.setFromPoints(vertices);
-  const ellipseMesh = new THREE.Line(ellipseGeometry, material);
-
-  ellipseMesh.rotation.x = Math.PI / 2; // Add this line to rotate the ellipse
-
-  return ellipseMesh;
-}
-
-
-
-
-const forceMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 });
-
-const numEllipses = 20; // Adjust this value to control the number of ellipses
-const minDistance = 10; // The distance of the innermost ellipse from the sun
-const distanceStep = 10; // The difference in distance between consecutive ellipses
-
-for (let i = 0; i < numEllipses; i++) {
-  const distance = minDistance + i * distanceStep;
-  const ellipse = createGravitationalEllipse(distance, forceMaterial);
-  scene.add(ellipse);
-}
-
 // Avaruusaseman fysiikkakappale
 // Planeettojen fysiikkakappaleet
 const spaceStation1Body = new CANNON.Body({
@@ -217,7 +164,6 @@ const spaceStation1Body = new CANNON.Body({
   velocity: new CANNON.Vec3(2, 1, 50), // Muuta x- ja z-koordinaatit 0:ksi ja y-koordinaatti 5:ksi
 });
 world.addBody(spaceStation1Body);
-
 
 // Planeettojen fysiikkakappaleet
 const planet1Body = new CANNON.Body({
@@ -287,8 +233,34 @@ function applyGravity(body1, body2, G) {
   if (body1 === asteroidBody || body2 === asteroidBody) asteroidForces.push(forceAndData);
 }
 
+// Gravitational wave rings
+const numRings = 10; // The number of rings
+const ringDistance = 10; // The distance between each ring
+const ringColor = 0x00ff00; // The color of the rings (green)
+const gravitationalWaveSpeed = 1; // Adjust this value to control the speed of the gravitational wave animation
+const ringThickness = 0.2; // Adjust this value to control the thickness of the rings
+const waveAmplitude = 2; // Adjust this value to control the amplitude of the sine wave
+const waveFrequency = 0.2; // Adjust this value to control the frequency of the sine wave
 
+const gravitationalWaveRings = [];
 
+for (let i = 0; i < numRings; i++) {
+  const radius = sunMesh.scale.x + i * ringDistance;
+  const ringGeometry = new THREE.TorusGeometry(radius, ringThickness, 16, 100);
+  const ringMaterial = new THREE.MeshBasicMaterial({ color: ringColor, side: THREE.DoubleSide });
+  const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+
+  scene.add(ring);
+  gravitationalWaveRings.push(ring);
+}
+
+// Add the following code in the animation loop
+// Sine wave animation for gravitational wave rings
+function animateGravitationalWaveRings(time) {
+  gravitationalWaveRings.forEach((ring, index) => {
+    ring.rotation.x = waveAmplitude * Math.sin(time * gravitationalWaveSpeed + index * waveFrequency);
+  });
+}
 
 const animate = function () {
   requestAnimationFrame(animate);
@@ -297,11 +269,23 @@ const animate = function () {
   const delta = clock.getDelta();
   world.step(delta * 0.001);
 
+  const elapsedTime = clock.getElapsedTime();
+ // Animate gravitational wave rings
+  for (let i = 0; i < numRings; i++) {
+  const ring = gravitationalWaveRings[i];
+  const innerRadius = sunMesh.scale.x + i * ringDistance + elapsedTime * gravitationalWaveSpeed;
+  const outerRadius = innerRadius + ringDistance;
+  ring.geometry.dispose(); // Dispose of the old geometry
+  ring.geometry = new THREE.RingGeometry(innerRadius, outerRadius, 64);
+  }
+
+  animateGravitationalWaveRings(clock.getElapsedTime());
+
   // Päivitä voimat gravitaation vaikutuksen mukaan
   applyGravity(sunBody, planet1Body, G);
   applyGravity(sunBody, planet2Body, G);
   applyGravity(sunBody, asteroidBody, G);
-  applyGravity(sunBody, spaceStation1Body, G)
+  applyGravity(sunBody, spaceStation1Body, G);
 
   // Päivitä meshien sijainti fysiikkakappaleiden sijainnin mukaan
   sunMesh.position.copy(sunBody.position);
@@ -314,6 +298,7 @@ const animate = function () {
   sunMaterial.uniforms["u_time"].value += 0.1;
   // orbit1Line.position.copy(sunBody.position);
   // orbit2Line.position.copy(sunBody.position);
+
 
   controls.update();
   renderer.render(scene, camera);
